@@ -38,8 +38,8 @@ export default async function handler(req, res) {
     umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
 
     // O Admin SDK ignora as regras de segurança do Firestore
-    const statsRef = db.collection("stats");
-    const snapshot = await statsRef.where("lastUpdate", "<", umAnoAtras).get();
+   const statsRef = db.collection("stats");
+const snapshot = await statsRef.get(); // Busca TODOS os documentos sem filtro
 
     if (snapshot.empty) {
       return res.status(200).json({ mensagem: "Nada para limpar." });
