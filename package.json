@@ -1,0 +1,8 @@
+{
+  "name": "cleanfirebase-api",
+  "version": "1.0.0",
+  "main": "api/cleanup.js",
+  "dependencies": {
+    "firebase-admin": "^12.0.0"
+  }
+}
