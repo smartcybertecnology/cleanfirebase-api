@@ -4,18 +4,15 @@ if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
-    admin.initializeApp({
-      credential: admin.credential.cert(serviceAccount),
-    });
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
   } catch (error) {
-    console.error('Erro ao inicializar Firebase Admin:', error.message);
+    console.error('Erro:', error.message);
   }
 }
 
 const db = admin.firestore();
 
 export default async function handler(req, res) {
-  // Configuração de CORS
   res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -31,43 +28,32 @@ export default async function handler(req, res) {
     const appId = "1:612906190622:web:40c509484218f71e516b0f";
     const usersPath = `artifacts/${appId}/users`;
     
-    // 1. Obter todos os documentos de utilizadores
-    const usersSnap = await db.collection(usersPath).get();
+    // Lista todos os documentos (incluindo os vazios que só têm subcoleções)
+    const usersRef = db.collection(usersPath);
+    const allUsers = await usersRef.listDocuments();
 
-    if (usersSnap.empty) {
-      return res.status(200).json({ mensagem: "A pasta de utilizadores já está vazia." });
+    if (allUsers.length === 0) {
+      return res.status(200).json({ mensagem: "Caminho totalmente limpo." });
     }
 
-    // 2. Loop para entrar em cada utilizador e apagar subcoleções
-    for (const userDoc of usersSnap.docs) {
-      // Procurar todas as subcoleções deste utilizador (ex: recentlyPlayed)
-      const subcollections = await userDoc.ref.listCollections();
-      
+    for (const userDoc of allUsers) {
+      // 1. Descobrir e apagar TODAS as subcoleções (como recentlyPlayed)
+      const subcollections = await userDoc.listCollections();
       for (const sub of subcollections) {
-        // Apagar todos os documentos dentro da subcoleção
-        const subSnap = await sub.get();
+        const subDocs = await sub.listDocuments();
         const batch = db.batch();
-        subSnap.docs.forEach((d) => batch.delete(d.ref));
+        subDocs.forEach(d => batch.delete(d));
         await batch.commit();
       }
-
-      // 3. Finalmente, apagar o documento do utilizador em si
-      await userDoc.ref.delete();
+      // 2. Apagar o documento do usuário
+      await userDoc.delete();
     }
 
-    // Opcional: Limpar também o gameRanks se desejar reset total
-    const gameRanksRef = db.collection(`artifacts/${appId}/public/data/gameRanks`);
-    const grSnap = await gameRanksRef.get();
-    const grBatch = db.batch();
-    grSnap.docs.forEach(d => grBatch.delete(d.ref));
-    await grBatch.commit();
-
     return res.status(200).json({ 
-      mensagem: "Sucesso! Todos os utilizadores, subcoleções e rankings foram apagados." 
+      mensagem: `Limpeza profunda concluída em ${allUsers.length} registros.` 
     });
 
   } catch (error) {
-    console.error("Erro na limpeza profunda:", error);
     return res.status(500).json({ erro: error.message });
   }
 }
