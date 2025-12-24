@@ -14,19 +14,21 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export default async function handler(req, res) {
-    // Configuração Robusta de CORS
+    // Cabeçalhos de fallback no código
     res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
+    // Resposta imediata para a verificação do navegador (Preflight)
     if (req.method === 'OPTIONS') {
         return res.status(200).end();
     }
 
-    // Validação do Token
+    // Verificação do Token (Certifique-se que CRON_SECRET está na Vercel)
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ erro: "Token Inválido" });
+        console.error("Tentativa de acesso com token inválido");
+        return res.status(401).json({ erro: "Não autorizado" });
     }
 
     try {
