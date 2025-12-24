@@ -14,17 +14,19 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export default async function handler(req, res) {
-    // Configuração de CORS
+    // Configuração Robusta de CORS
     res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-    if (req.method === 'OPTIONS') return res.status(200).end();
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
 
-    // Validação do Token (Lê a variável que você acabou de configurar)
+    // Validação do Token
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ erro: "Acesso Negado: Token Inválido" });
+        return res.status(401).json({ erro: "Token Inválido" });
     }
 
     try {
@@ -34,13 +36,15 @@ export default async function handler(req, res) {
         const q = query(collection(db, "stats"), where("lastUpdate", "<", umAnoAtras));
         const snapshot = await getDocs(q);
 
-        if (snapshot.empty) return res.status(200).json({ mensagem: "Nenhum dado antigo encontrado." });
+        if (snapshot.empty) {
+            return res.status(200).json({ mensagem: "Nada para limpar." });
+        }
 
         const batch = writeBatch(db);
         snapshot.forEach((d) => batch.delete(d.ref));
         await batch.commit();
 
-        return res.status(200).json({ mensagem: `${snapshot.size} registros removidos com sucesso.` });
+        return res.status(200).json({ mensagem: `Sucesso: ${snapshot.size} itens removidos.` });
     } catch (error) {
         return res.status(500).json({ erro: error.message });
     }
