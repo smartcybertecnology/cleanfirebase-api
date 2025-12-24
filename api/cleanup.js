@@ -3,8 +3,6 @@ import admin from 'firebase-admin';
 if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
-    
-    // Ajuste crucial: Corrige as quebras de linha da chave privada que a Vercel pode formatar mal
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
 
     admin.initializeApp({
@@ -23,34 +21,48 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  if (req.method !== 'POST') return res.status(405).json({ erro: "Método não permitido" });
-
+  
   const authHeader = req.headers.authorization;
-  // A variável CRON_SECRET na Vercel deve ser: N#W_s3cr3t
   const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
 
   if (!authHeader || authHeader !== expectedToken) {
-    return res.status(401).json({ erro: "Token Inválido ou Ausente" });
+    return res.status(401).json({ erro: "Token Inválido" });
   }
 
   try {
-    const umAnoAtras = new Date();
-    umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
+    const appId = "1:612906190622:web:40c509484218f71e516b0f";
+    const batch = db.batch();
+    let totalRemovido = 0;
 
-    // O Admin SDK ignora as regras de segurança do Firestore
-   const statsRef = db.collection("stats");
-const snapshot = await statsRef.get(); // Busca TODOS os documentos sem filtro
+    // 1. Limpeza do Ranking de Jogos (gameRanks)
+    const gameRanksRef = db.collection(`artifacts/${appId}/public/data/gameRanks`);
+    const gameRanksSnap = await gameRanksRef.get();
+    gameRanksSnap.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+      totalRemovido++;
+    });
 
-    if (snapshot.empty) {
-      return res.status(200).json({ mensagem: "Nada para limpar." });
+    // 2. Limpeza dos Usuários (users)
+    // Nota: Esta coleção contém subcoleções. O código abaixo deleta os documentos dos usuários.
+    const usersRef = db.collection(`artifacts/${appId}/users`);
+    const usersSnap = await usersRef.get();
+    usersSnap.docs.forEach((doc) => {
+      batch.delete(doc.ref);
+      totalRemovido++;
+    });
+
+    if (totalRemovido === 0) {
+      return res.status(200).json({ mensagem: "Nada para limpar. As coleções já estão vazias." });
     }
 
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
     await batch.commit();
 
-    return res.status(200).json({ mensagem: `Sucesso: ${snapshot.size} itens removidos.` });
+    return res.status(200).json({ 
+      mensagem: `Sucesso! Foram removidos ${totalRemovido} registros (Jogos e Usuários).` 
+    });
+
   } catch (error) {
+    console.error("Erro na limpeza:", error);
     return res.status(500).json({ erro: error.message });
   }
 }
