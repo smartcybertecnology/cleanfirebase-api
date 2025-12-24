@@ -1,51 +1,56 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import admin from 'firebase-admin';
 
-const firebaseConfig = {
-    apiKey: "AIzaSyAwEJ5pj_Z8kg5nOIwWwXM1-h-rZX3BHno",
-    authDomain: "portal-de-jogos-gratis.firebaseapp.com",
-    projectId: "portal-de-jogos-gratis",
-    storageBucket: "portal-de-jogos-gratis.firebasestorage.app",
-    messagingSenderId: "612906190622",
-    appId: "1:612906190622:web:40c509484218f71e516b0f"
-};
+if (!admin.apps.length) {
+  try {
+    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    
+    // Ajuste crucial: Corrige as quebras de linha da chave privada que a Vercel pode formatar mal
+    serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+    admin.initializeApp({
+      credential: admin.credential.cert(serviceAccount),
+    });
+  } catch (error) {
+    console.error('Erro ao inicializar Firebase Admin:', error.message);
+  }
+}
+
+const db = admin.firestore();
 
 export default async function handler(req, res) {
-    // Configuração Robusta de CORS
-    res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
+  if (req.method === 'OPTIONS') return res.status(200).end();
+  if (req.method !== 'POST') return res.status(405).json({ erro: "Método não permitido" });
+
+  const authHeader = req.headers.authorization;
+  // A variável CRON_SECRET na Vercel deve ser: N#W_s3cr3t
+  const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
+
+  if (!authHeader || authHeader !== expectedToken) {
+    return res.status(401).json({ erro: "Token Inválido ou Ausente" });
+  }
+
+  try {
+    const umAnoAtras = new Date();
+    umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
+
+    // O Admin SDK ignora as regras de segurança do Firestore
+    const statsRef = db.collection("stats");
+    const snapshot = await statsRef.where("lastUpdate", "<", umAnoAtras).get();
+
+    if (snapshot.empty) {
+      return res.status(200).json({ mensagem: "Nada para limpar." });
     }
 
-    // Validação do Token
-    const authHeader = req.headers.authorization;
-    if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        return res.status(401).json({ erro: "Token Inválido" });
-    }
+    const batch = db.batch();
+    snapshot.docs.forEach((doc) => batch.delete(doc.ref));
+    await batch.commit();
 
-    try {
-        const umAnoAtras = new Date();
-        umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
-
-        const q = query(collection(db, "stats"), where("lastUpdate", "<", umAnoAtras));
-        const snapshot = await getDocs(q);
-
-        if (snapshot.empty) {
-            return res.status(200).json({ mensagem: "Nada para limpar." });
-        }
-
-        const batch = writeBatch(db);
-        snapshot.forEach((d) => batch.delete(d.ref));
-        await batch.commit();
-
-        return res.status(200).json({ mensagem: `Sucesso: ${snapshot.size} itens removidos.` });
-    } catch (error) {
-        return res.status(500).json({ erro: error.message });
-    }
+    return res.status(200).json({ mensagem: `Sucesso: ${snapshot.size} itens removidos.` });
+  } catch (error) {
+    return res.status(500).json({ erro: error.message });
+  }
 }
