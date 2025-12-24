@@ -15,7 +15,16 @@ const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
 
 export default async function handler(req, res) {
-    // Proteção para que apenas o seu admin ou o Cron da Vercel execute isso
+    // Permite que o seu site de jogos acesse esta API
+    res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
+    res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+
+    // Responde rapidamente a requisições de "pre-flight" do navegador
+    if (req.method === 'OPTIONS') {
+        return res.status(200).end();
+    }
+
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return res.status(401).json({ erro: "Não autorizado" });
