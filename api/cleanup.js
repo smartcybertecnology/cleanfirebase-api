@@ -1,5 +1,6 @@
 import admin from 'firebase-admin';
 
+// Inicialização segura para Vercel
 if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -9,7 +10,7 @@ if (!admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
     });
   } catch (error) {
-    console.error('Erro ao inicializar Firebase Admin:', error.message);
+    console.error('Erro de inicialização:', error.message);
   }
 }
 
@@ -22,47 +23,48 @@ export default async function handler(req, res) {
 
   if (req.method === 'OPTIONS') return res.status(200).end();
   
+  // Validação do Token (Deve ser Bearer N#W_s3cr3t)
   const authHeader = req.headers.authorization;
   const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
 
   if (!authHeader || authHeader !== expectedToken) {
-    return res.status(401).json({ erro: "Token Inválido" });
+    return res.status(401).json({ erro: "Acesso negado" });
   }
 
   try {
     const appId = "1:612906190622:web:40c509484218f71e516b0f";
     const batch = db.batch();
-    let totalRemovido = 0;
+    let count = 0;
 
-    // 1. Limpeza do Ranking de Jogos (gameRanks)
+    // 1. Coletar documentos de gameRanks (Image_8136a7.png)
     const gameRanksRef = db.collection(`artifacts/${appId}/public/data/gameRanks`);
     const gameRanksSnap = await gameRanksRef.get();
-    gameRanksSnap.docs.forEach((doc) => {
+    gameRanksSnap.docs.forEach(doc => {
       batch.delete(doc.ref);
-      totalRemovido++;
+      count++;
     });
 
-    // 2. Limpeza dos Usuários (users)
-    // Nota: Esta coleção contém subcoleções. O código abaixo deleta os documentos dos usuários.
+    // 2. Coletar documentos de usuários (Image_814a05.png)
     const usersRef = db.collection(`artifacts/${appId}/users`);
     const usersSnap = await usersRef.get();
-    usersSnap.docs.forEach((doc) => {
+    usersSnap.docs.forEach(doc => {
       batch.delete(doc.ref);
-      totalRemovido++;
+      count++;
     });
 
-    if (totalRemovido === 0) {
-      return res.status(200).json({ mensagem: "Nada para limpar. As coleções já estão vazias." });
+    if (count === 0) {
+      return res.status(200).json({ mensagem: "Nada para apagar. As coleções estão vazias." });
     }
 
+    // Executa a limpeza total
     await batch.commit();
 
     return res.status(200).json({ 
-      mensagem: `Sucesso! Foram removidos ${totalRemovido} registros (Jogos e Usuários).` 
+      mensagem: `Sucesso! Foram removidos ${count} documentos no total.` 
     });
 
   } catch (error) {
-    console.error("Erro na limpeza:", error);
+    console.error("Erro no processamento:", error);
     return res.status(500).json({ erro: error.message });
   }
 }
