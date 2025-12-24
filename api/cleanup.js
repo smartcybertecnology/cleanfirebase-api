@@ -6,7 +6,7 @@ if (!admin.apps.length) {
     serviceAccount.private_key = serviceAccount.private_key.replace(/\\n/g, '\n');
     admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
   } catch (error) {
-    console.error('Erro:', error.message);
+    console.error('Erro Firebase Admin:', error.message);
   }
 }
 
@@ -26,31 +26,36 @@ export default async function handler(req, res) {
 
   try {
     const appId = "1:612906190622:web:40c509484218f71e516b0f";
-    const usersPath = `artifacts/${appId}/users`;
-    
-    // Lista todos os documentos (incluindo os vazios que só têm subcoleções)
-    const usersRef = db.collection(usersPath);
-    const allUsers = await usersRef.listDocuments();
+    let totalDeletado = 0;
 
-    if (allUsers.length === 0) {
-      return res.status(200).json({ mensagem: "Caminho totalmente limpo." });
+    // 1. LIMPAR GAMERANKS (Ranking de Jogos)
+    const gameRanksPath = `artifacts/${appId}/public/data/gameRanks`;
+    const gameRanksDocs = await db.collection(gameRanksPath).listDocuments();
+    for (const doc of gameRanksDocs) {
+      await doc.delete();
+      totalDeletado++;
     }
 
-    for (const userDoc of allUsers) {
-      // 1. Descobrir e apagar TODAS as subcoleções (como recentlyPlayed)
+    // 2. LIMPAR USERS (Utilizadores e Subcoleções)
+    const usersPath = `artifacts/${appId}/users`;
+    const userDocs = await db.collection(usersPath).listDocuments();
+    
+    for (const userDoc of userDocs) {
+      // Apaga subcoleções (como recentlyPlayed) antes de apagar o utilizador
       const subcollections = await userDoc.listCollections();
       for (const sub of subcollections) {
         const subDocs = await sub.listDocuments();
-        const batch = db.batch();
-        subDocs.forEach(d => batch.delete(d));
-        await batch.commit();
+        for (const sDoc of subDocs) {
+          await sDoc.delete();
+          totalDeletado++;
+        }
       }
-      // 2. Apagar o documento do usuário
       await userDoc.delete();
+      totalDeletado++;
     }
 
     return res.status(200).json({ 
-      mensagem: `Limpeza profunda concluída em ${allUsers.length} registros.` 
+      mensagem: `Sucesso! Foram removidos ${totalDeletado} registros entre rankings e usuários.` 
     });
 
   } catch (error) {
