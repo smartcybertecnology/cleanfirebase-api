@@ -1,6 +1,5 @@
 import admin from 'firebase-admin';
 
-// Inicialização segura para Vercel
 if (!admin.apps.length) {
   try {
     const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
@@ -10,7 +9,7 @@ if (!admin.apps.length) {
       credential: admin.credential.cert(serviceAccount),
     });
   } catch (error) {
-    console.error('Erro de inicialização:', error.message);
+    console.error('Erro ao inicializar Firebase Admin:', error.message);
   }
 }
 
@@ -22,49 +21,56 @@ export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
   if (req.method === 'OPTIONS') return res.status(200).end();
-  
-  // Validação do Token (Deve ser Bearer N#W_s3cr3t)
+
   const authHeader = req.headers.authorization;
   const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
 
   if (!authHeader || authHeader !== expectedToken) {
-    return res.status(401).json({ erro: "Acesso negado" });
+    return res.status(401).json({ erro: "Token Inválido" });
   }
 
   try {
     const appId = "1:612906190622:web:40c509484218f71e516b0f";
-    const batch = db.batch();
-    let count = 0;
-
-    // 1. Coletar documentos de gameRanks (Image_8136a7.png)
+    
+    // 1. Limpar gameRanks (Ranking Geral)
     const gameRanksRef = db.collection(`artifacts/${appId}/public/data/gameRanks`);
-    const gameRanksSnap = await gameRanksRef.get();
-    gameRanksSnap.docs.forEach(doc => {
-      batch.delete(doc.ref);
-      count++;
-    });
+    await deleteCollection(gameRanksRef);
 
-    // 2. Coletar documentos de usuários (Image_814a05.png)
+    // 2. Limpar a coleção de usuários e suas subcoleções (Limpeza Profunda)
     const usersRef = db.collection(`artifacts/${appId}/users`);
     const usersSnap = await usersRef.get();
-    usersSnap.docs.forEach(doc => {
-      batch.delete(doc.ref);
-      count++;
-    });
 
-    if (count === 0) {
-      return res.status(200).json({ mensagem: "Nada para apagar. As coleções estão vazias." });
+    for (const userDoc of usersSnap.docs) {
+      // Para cada usuário, apagamos a subcoleção 'recentlyPlayed'
+      const recentlyPlayedRef = userDoc.ref.collection('recentlyPlayed');
+      await deleteCollection(recentlyPlayedRef);
+      
+      // Se houver outras subcoleções conhecidas, adicione-as aqui seguindo o mesmo padrão
+      
+      // Por fim, apaga o documento do usuário em si
+      await userDoc.ref.delete();
     }
 
-    // Executa a limpeza total
-    await batch.commit();
-
     return res.status(200).json({ 
-      mensagem: `Sucesso! Foram removidos ${count} documentos no total.` 
+      mensagem: "Sucesso! O banco de dados foi completamente resetado (Jogos, Usuários e Históricos)." 
     });
 
   } catch (error) {
-    console.error("Erro no processamento:", error);
+    console.error("Erro na limpeza profunda:", error);
     return res.status(500).json({ erro: error.message });
   }
+}
+
+/**
+ * Função auxiliar para deletar todos os documentos de uma coleção/subcoleção
+ */
+async function deleteCollection(collectionRef) {
+  const snapshot = await collectionRef.get();
+  if (snapshot.empty) return;
+
+  const batch = db.batch();
+  snapshot.docs.forEach((doc) => {
+    batch.delete(doc.ref);
+  });
+  await batch.commit();
 }
