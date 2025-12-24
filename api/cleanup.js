@@ -1,33 +1,30 @@
-import { initializeApp } from "firebase/app";
-import { getFirestore, collection, query, where, getDocs, writeBatch } from "firebase/firestore";
+import { initializeApp, getApps, cert } from "firebase-admin/app";
+import { getFirestore } from "firebase-admin/firestore";
 
+// Configuração para Node.js (Ambiente Vercel)
 const firebaseConfig = {
-    apiKey: "AIzaSyAwEJ5pj_Z8kg5nOIwWwXM1-h-rZX3BHno",
-    authDomain: "portal-de-jogos-gratis.firebaseapp.com",
     projectId: "portal-de-jogos-gratis",
-    storageBucket: "portal-de-jogos-gratis.firebasestorage.app",
-    messagingSenderId: "612906190622",
-    appId: "1:612906190622:web:40c509484218f71e516b0f"
+    // Se estiver usando Service Account, coloque aqui. 
+    // Caso contrário, o Firebase Admin tenta usar as credenciais padrão.
 };
 
-const app = initializeApp(firebaseConfig);
-const db = getFirestore(app);
+if (!getApps().length) {
+    initializeApp(firebaseConfig);
+}
+
+const db = getFirestore();
 
 export default async function handler(req, res) {
-    // Cabeçalhos de fallback no código
+    // Cabeçalhos CORS para permitir o acesso do seu domínio
     res.setHeader('Access-Control-Allow-Origin', 'https://playjogosgratis.com');
     res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
 
-    // Resposta imediata para a verificação do navegador (Preflight)
-    if (req.method === 'OPTIONS') {
-        return res.status(200).end();
-    }
+    if (req.method === 'OPTIONS') return res.status(200).end();
 
-    // Verificação do Token (Certifique-se que CRON_SECRET está na Vercel)
+    // Verificação do Token de Segurança
     const authHeader = req.headers.authorization;
     if (authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
-        console.error("Tentativa de acesso com token inválido");
         return res.status(401).json({ erro: "Não autorizado" });
     }
 
@@ -35,19 +32,21 @@ export default async function handler(req, res) {
         const umAnoAtras = new Date();
         umAnoAtras.setFullYear(umAnoAtras.getFullYear() - 1);
 
-        const q = query(collection(db, "stats"), where("lastUpdate", "<", umAnoAtras));
-        const snapshot = await getDocs(q);
+        // Referência à coleção correta conforme seu banco
+        const statsRef = db.collection("stats");
+        const snapshot = await statsRef.where("lastUpdate", "<", umAnoAtras).get();
 
         if (snapshot.empty) {
             return res.status(200).json({ mensagem: "Nada para limpar." });
         }
 
-        const batch = writeBatch(db);
-        snapshot.forEach((d) => batch.delete(d.ref));
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => batch.delete(doc.ref));
         await batch.commit();
 
         return res.status(200).json({ mensagem: `Sucesso: ${snapshot.size} itens removidos.` });
     } catch (error) {
+        console.error("Erro na função:", error);
         return res.status(500).json({ erro: error.message });
     }
 }
